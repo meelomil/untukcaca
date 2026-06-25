@@ -1577,51 +1577,27 @@ letterObserver.observe(letterSection);
 
 
 /* ===================================================================
-   5) MESSAGE WALL — simpan & tampilkan pesan via Local Storage
+   5) MESSAGE WALL — simpan & tampilkan pesan via Firebase Realtime Database
+      Semua pengunjung (laptop, HP siapa pun) terhubung ke database yang sama,
+      jadi pesan tidak lagi hanya tersimpan lokal di satu device.
    =================================================================== */
-const STORAGE_KEY_MESSAGES = 'caca_birthday_messages';
+
+// GANTI URL INI dengan URL Realtime Database project Firebase kamu sendiri
+// (lihat di Firebase Console > Realtime Database, di bagian atas halaman "Data")
+const FIREBASE_DB_URL = 'https://webultahcaca-default-rtdb.firebaseio.com';
 
 const messageForm = document.getElementById('message-form');
 const msgNameInput = document.getElementById('msg-name');
 const msgTextInput = document.getElementById('msg-text');
 const messageListEl = document.getElementById('message-list');
 
-function getMessages(){
-  const raw = localStorage.getItem(STORAGE_KEY_MESSAGES);
-  return raw ? JSON.parse(raw) : [];
-}
-
-function saveMessages(messages){
-  localStorage.setItem(STORAGE_KEY_MESSAGES, JSON.stringify(messages));
-}
+// Firebase REST API: tambahkan ".json" di akhir URL untuk baca/tulis data
+const MESSAGES_ENDPOINT = `${FIREBASE_DB_URL}/messages.json`;
 
 function formatTimestamp(ts){
   const d = new Date(ts);
   return d.toLocaleDateString('id-ID', { day:'numeric', month:'long', year:'numeric' }) +
          ' · ' + d.toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' });
-}
-
-function renderMessages(){
-  const messages = getMessages();
-  messageListEl.innerHTML = '';
-
-  if (messages.length === 0){
-    messageListEl.innerHTML = '<p class="message-empty">Belum ada pesan. Jadilah yang pertama menulis untuk Caca! 🌷</p>';
-    return;
-  }
-
-  // Tampilkan pesan terbaru di atas
-  messages.slice().reverse().forEach((msg) => {
-    const bubble = document.createElement('div');
-    bubble.className = 'message-bubble';
-    bubble.innerHTML = `
-      <button class="msg-delete" data-id="${msg.id}" title="Hapus pesan"><i class="fa-solid fa-trash"></i></button>
-      <div class="msg-name">${escapeHTML(msg.name)}</div>
-      <div class="msg-text">${escapeHTML(msg.text)}</div>
-      <div class="msg-time">${formatTimestamp(msg.id)}</div>
-    `;
-    messageListEl.appendChild(bubble);
-  });
 }
 
 // Cegah XSS sederhana dari input pengguna sebelum dimasukkan ke innerHTML
@@ -1631,72 +1607,148 @@ function escapeHTML(str){
   return div.innerHTML;
 }
 
-messageForm.addEventListener('submit', (e) => {
+// --- Ambil semua pesan dari Firebase dan render ke halaman ---
+async function loadMessages(){
+  try {
+    const res = await fetch(MESSAGES_ENDPOINT);
+    if (!res.ok) throw new Error('Gagal mengambil data');
+    const data = await res.json(); // objek { firebaseKey: {name, text, id}, ... } atau null kalau kosong
+    renderMessages(data);
+  } catch (err) {
+    messageListEl.innerHTML = '<p class="message-empty">Gagal memuat pesan. Cek koneksi internet kamu, lalu muat ulang halaman.</p>';
+    console.error('Load messages error:', err);
+  }
+}
+
+function renderMessages(data){
+  messageListEl.innerHTML = '';
+
+  if (!data){
+    messageListEl.innerHTML = '<p class="message-empty">Belum ada pesan. Jadilah yang pertama menulis untuk Caca! 🌷</p>';
+    return;
+  }
+
+  // Firebase menyimpan data sebagai objek (key unik per pesan), ubah jadi array agar mudah diurutkan
+  const messages = Object.entries(data).map(([firebaseKey, msg]) => ({ firebaseKey, ...msg }));
+  messages.sort((a, b) => b.id - a.id); // terbaru di atas
+
+  messages.forEach((msg) => {
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble';
+    bubble.innerHTML = `
+      <button class="msg-delete" data-key="${msg.firebaseKey}" title="Hapus pesan"><i class="fa-solid fa-trash"></i></button>
+      <div class="msg-name">${escapeHTML(msg.name)}</div>
+      <div class="msg-text">${escapeHTML(msg.text)}</div>
+      <div class="msg-time">${formatTimestamp(msg.id)}</div>
+    `;
+    messageListEl.appendChild(bubble);
+  });
+}
+
+// --- Kirim pesan baru ke Firebase ---
+messageForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = msgNameInput.value.trim();
   const text = msgTextInput.value.trim();
   if (!name || !text) return;
 
-  const messages = getMessages();
-  messages.push({ id: Date.now(), name, text });
-  saveMessages(messages);
-  renderMessages();
+  const submitBtn = messageForm.querySelector('button[type="submit"]');
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>&nbsp; Mengirim...';
 
-  messageForm.reset();
-  // Sedikit confetti kecil sebagai feedback menyenangkan saat pesan terkirim
-  spawnHeart();
+  try {
+    // Firebase REST API: POST ke endpoint .json otomatis membuat entry baru dengan key unik
+    const res = await fetch(MESSAGES_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: Date.now(), name, text })
+    });
+    if (!res.ok) throw new Error('Gagal mengirim pesan');
+
+    messageForm.reset();
+    spawnHeart(); // sedikit feedback menyenangkan saat pesan terkirim
+    await loadMessages(); // refresh daftar pesan supaya pesan baru langsung muncul
+  } catch (err) {
+    alert('Pesan gagal terkirim. Cek koneksi internet kamu dan coba lagi.');
+    console.error('Send message error:', err);
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i>&nbsp; Kirim Pesan';
+  }
 });
 
-// Hapus pesan (event delegation karena bubble dibuat dinamis)
-messageListEl.addEventListener('click', (e) => {
+// --- Hapus pesan (event delegation karena bubble dibuat dinamis) ---
+messageListEl.addEventListener('click', async (e) => {
   const btn = e.target.closest('.msg-delete');
   if (!btn) return;
-  const id = Number(btn.dataset.id);
-  const messages = getMessages().filter(m => m.id !== id);
-  saveMessages(messages);
-  renderMessages();
-});
+  const firebaseKey = btn.dataset.key;
 
-renderMessages(); // render pertama kali saat halaman dimuat
-
-// --- Export pesan ke file JSON (cadangan, supaya tidak hilang kalau localStorage ke-reset) ---
-document.getElementById('btn-export-messages').addEventListener('click', () => {
-  const messages = getMessages();
-  if (messages.length === 0){
-    alert('Belum ada pesan untuk dicadangkan.');
-    return;
+  try {
+    // Firebase REST API: DELETE ke endpoint/key.json menghapus entry tersebut
+    const res = await fetch(`${FIREBASE_DB_URL}/messages/${firebaseKey}.json`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Gagal menghapus pesan');
+    await loadMessages();
+  } catch (err) {
+    alert('Gagal menghapus pesan. Coba lagi.');
+    console.error('Delete message error:', err);
   }
-  const blob = new Blob([JSON.stringify(messages, null, 2)], { type: 'application/json' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = 'pesan-ulang-tahun-caca.json';
-  link.click();
 });
 
-// --- Import pesan dari file JSON cadangan (digabung dengan pesan yang sudah ada, anti-duplikat by id) ---
-document.getElementById('input-import-messages').addEventListener('change', (e) => {
+loadMessages(); // muat pesan pertama kali saat halaman dibuka
+
+// Auto-refresh setiap 8 detik, supaya pesan baru dari device lain ikut muncul
+// tanpa perlu reload manual (polling sederhana, cukup untuk skala website kecil ini)
+setInterval(loadMessages, 8000);
+
+// --- Export pesan ke file JSON (cadangan tambahan, opsional) ---
+document.getElementById('btn-export-messages').addEventListener('click', async () => {
+  try {
+    const res = await fetch(MESSAGES_ENDPOINT);
+    const data = await res.json();
+    if (!data){
+      alert('Belum ada pesan untuk dicadangkan.');
+      return;
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'pesan-ulang-tahun-caca.json';
+    link.click();
+  } catch (err) {
+    alert('Gagal mengambil data untuk dicadangkan.');
+  }
+});
+
+// --- Import pesan dari file JSON cadangan ke Firebase ---
+document.getElementById('input-import-messages').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
 
   const reader = new FileReader();
-  reader.onload = (event) => {
+  reader.onload = async (event) => {
     try {
       const imported = JSON.parse(event.target.result);
-      if (!Array.isArray(imported)) throw new Error('Format tidak sesuai');
+      // Format dari export Firebase berupa objek { key: {id,name,text} }
+      const entries = Array.isArray(imported)
+        ? imported
+        : Object.values(imported);
 
-      const existing = getMessages();
-      const existingIds = new Set(existing.map(m => m.id));
-      const merged = existing.concat(imported.filter(m => !existingIds.has(m.id)));
-
-      saveMessages(merged);
-      renderMessages();
+      for (const msg of entries){
+        await fetch(MESSAGES_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: msg.id || Date.now(), name: msg.name, text: msg.text })
+        });
+      }
+      await loadMessages();
       alert('Cadangan pesan berhasil dimuat!');
     } catch (err) {
       alert('Gagal membaca file cadangan. Pastikan file JSON-nya benar.');
+      console.error(err);
     }
   };
   reader.readAsText(file);
-  e.target.value = ''; // reset input agar bisa pilih file yang sama lagi nanti
+  e.target.value = '';
 });
 
 
