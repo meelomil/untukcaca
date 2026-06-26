@@ -580,47 +580,76 @@ section{
 
 /* =====================================================================
    REACTION BAR — baris emoji reaksi untuk tiap foto/video di Galeri
+   Pola: ringkasan kecil (emoji+jumlah, atau ikon hati kosong) selalu
+   terlihat; klik ringkasan untuk membuka 5 pilihan emoji lengkap.
    ===================================================================== */
-/* Di dalam gallery-item (foto): overlay di bagian bawah, muncul saat hover/tap,
+
+/* Di dalam gallery-item (foto): ringkasan nempel di pojok kanan-bawah foto,
    karena .gallery-item punya overflow:hidden + aspect-ratio 1/1 untuk crop foto persegi */
 .gallery-item .reaction-bar{
   position:absolute;
-  left:0; right:0; bottom:0;
+  right: 6px;
+  bottom: 6px;
   z-index:2;
-  display:flex;
-  justify-content:center;
-  gap: 0.3rem;
-  padding: 0.5rem 0.4rem;
-  background: linear-gradient(to top, rgba(0,0,0,0.55), transparent);
-  opacity:0;
-  transition: opacity 0.25s ease;
 }
-.gallery-item:hover .reaction-bar,
-.gallery-item .reaction-bar.has-reactions{ opacity:1; }
 
-/* Di dalam video-slot: elemen biasa di bawah caption, selalu terlihat (tidak perlu hover) */
+/* Di dalam video-slot: elemen biasa di bawah caption */
 .video-slot .reaction-bar{
   display:flex;
   justify-content:center;
-  gap: 0.4rem;
-  padding: 0 0.6rem 0.7rem;
-  flex-wrap:wrap;
+  padding: 0 0.6rem 0.8rem;
+  position:relative;
 }
 
-.reaction-btn{
-  background: rgba(255,255,255,0.9);
-  border: none;
+.reaction-summary{
+  background: rgba(255,255,255,0.92);
+  border:none;
   border-radius: 50px;
-  padding: 0.2rem 0.5rem;
+  padding: 0.3rem 0.6rem;
   font-size: 0.85rem;
   cursor:pointer;
   display:flex;
   align-items:center;
+  gap: 0.25rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  transition: transform 0.15s ease;
+}
+.reaction-summary:hover{ transform: scale(1.08); }
+.reaction-summary i{ color: var(--text-soft); font-size: 0.8rem; }
+.reaction-summary .reaction-count{
+  font-family: var(--font-heading);
+  font-weight:700;
+  font-size: 0.72rem;
+  color: var(--text-dark);
+}
+
+/* Panel 5 pilihan emoji, muncul sebagai popup tepat di atas ringkasan saat diklik */
+.reaction-options{
+  position: fixed; /* fixed terhadap viewport, posisi top/left diisi JS saat dibuka, supaya tidak ter-clip oleh overflow:hidden parent (mis. .gallery-item) */
+  background:#fff;
+  border-radius: 50px;
+  padding: 0.35rem 0.5rem;
+  box-shadow: var(--shadow-soft);
+  display:flex;
   gap: 0.2rem;
+  white-space:nowrap;
+  z-index: 500;
+}
+
+.reaction-btn{
+  background: none;
+  border: none;
+  border-radius: 50px;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.95rem;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  gap: 0.15rem;
   transition: transform 0.15s ease, background 0.15s ease;
   line-height:1.3;
 }
-.reaction-btn:hover{ transform: scale(1.15); background:#fff; }
+.reaction-btn:hover{ transform: scale(1.2); background: var(--pink-light); }
 .reaction-btn.user-reacted{ background: var(--pink-deep); color:#fff; }
 .reaction-btn .reaction-count{
   font-family: var(--font-heading);
@@ -2755,26 +2784,81 @@ function renderAllReactionBars(allData){
     const counts = allData[itemId] || {};
     const myPick = myReactions[itemId]; // emoji apa yang sudah dipilih user ini untuk item ini (kalau ada)
 
-    bar.innerHTML = '';
+    // Hitung total reaksi & cari emoji dengan jumlah terbanyak (untuk ditampilkan di ringkasan)
     let totalCount = 0;
-
+    let topEmoji = null;
+    let topCount = 0;
     REACTION_EMOJIS.forEach((emoji) => {
       const count = counts[emoji] || 0;
       totalCount += count;
+      if (count > topCount){ topCount = count; topEmoji = emoji; }
+    });
 
+    bar.dataset.totalCount = totalCount;
+    bar.innerHTML = '';
+
+    // --- Ringkasan: selalu ada, ini yang diklik untuk buka/tutup pilihan lengkap ---
+    const summary = document.createElement('button');
+    summary.type = 'button';
+    summary.className = 'reaction-summary';
+    if (totalCount > 0){
+      summary.innerHTML = `${topEmoji}<span class="reaction-count">${totalCount}</span>`;
+    } else {
+      summary.innerHTML = `<i class="fa-regular fa-heart"></i>`; // ikon kosong kalau belum ada reaksi sama sekali
+    }
+    bar.appendChild(summary);
+
+    // --- Panel pilihan lengkap (5 emoji): tersembunyi sampai ringkasan diklik ---
+    const options = document.createElement('div');
+    options.className = 'reaction-options';
+    options.hidden = true;
+
+    REACTION_EMOJIS.forEach((emoji) => {
+      const count = counts[emoji] || 0;
       const btn = document.createElement('button');
+      btn.type = 'button';
       btn.className = 'reaction-btn' + (myPick === emoji ? ' user-reacted' : '');
       btn.dataset.itemId = itemId;
       btn.dataset.emoji = emoji;
       btn.innerHTML = `${emoji}${count > 0 ? `<span class="reaction-count">${count}</span>` : ''}`;
-      bar.appendChild(btn);
+      options.appendChild(btn);
     });
-
-    // Kalau item ini sudah punya reaksi, beri class supaya overlay-nya (di gallery foto) tetap terlihat
-    // tanpa perlu hover dulu — biar reaksi yang sudah ada tetap kelihatan dari awal
-    bar.classList.toggle('has-reactions', totalCount > 0);
+    bar.appendChild(options);
   });
 }
+
+// --- Klik ringkasan reaksi: buka/tutup panel 5 pilihan lengkap ---
+document.addEventListener('click', (e) => {
+  const summaryBtn = e.target.closest('.reaction-summary');
+
+  // Tutup semua panel pilihan yang lain dulu, supaya cuma 1 yang terbuka dalam satu waktu
+  document.querySelectorAll('.reaction-options').forEach((opt) => {
+    if (!summaryBtn || opt !== summaryBtn.nextElementSibling){
+      opt.hidden = true;
+    }
+  });
+
+  if (summaryBtn){
+    const options = summaryBtn.nextElementSibling;
+    const willOpen = options.hidden;
+    options.hidden = !options.hidden;
+
+    if (willOpen){
+      // Hitung posisi panel relatif terhadap viewport (position:fixed), tepat di atas tombol ringkasan,
+      // supaya tidak ter-clip oleh overflow:hidden milik .gallery-item
+      const rect = summaryBtn.getBoundingClientRect();
+      // Render dulu (tak terlihat) untuk dapat lebar aslinya, baru posisikan presisi
+      options.style.left = '0px';
+      options.style.top = '0px';
+      const optionsWidth = options.offsetWidth;
+      let left = rect.right - optionsWidth; // rata kanan terhadap tombol ringkasan
+      left = Math.max(8, Math.min(left, window.innerWidth - optionsWidth - 8)); // jaga agar tidak keluar layar
+      const top = rect.top - options.offsetHeight - 8; // di atas tombol ringkasan, dengan jarak 8px
+      options.style.left = left + 'px';
+      options.style.top = Math.max(8, top) + 'px';
+    }
+  }
+});
 
 // --- Klik tombol reaksi: kirim/update angka ke Firebase ---
 // Event delegation di document, karena reaction-bar tersebar di banyak section berbeda
