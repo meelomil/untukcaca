@@ -498,7 +498,7 @@ section{
   font-size: 1.8rem;
   overflow:hidden;
 }
-.timeline-photo img{ width:100%; height:100%; object-fit:cover; }
+.timeline-photo img{ width:100%; height:100%; object-fit:contain; background: linear-gradient(135deg, var(--pink-light), var(--orange-light)); }
 .timeline-card h3{
   font-family: var(--font-heading);
   color: var(--pink-deep);
@@ -868,6 +868,90 @@ section{
 }
 .yt-embed-wrap iframe{ width:100%; height:100%; border:0; }
 
+/* Tombol simpan ke favorit */
+.yt-fav-btn{
+  width:100%;
+  margin-top: 1rem;
+  background: #fff;
+  border: 2px solid var(--orange-deep);
+  color: var(--orange-deep);
+  font-family: var(--font-heading);
+  font-weight:700;
+  padding: 0.7rem;
+  border-radius: 50px;
+  cursor:pointer;
+  transition: all 0.25s ease;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:0.5rem;
+}
+.yt-fav-btn:hover{ background: var(--orange-light); }
+.yt-fav-btn.is-saved{
+  background: var(--orange-deep);
+  color:#fff;
+  border-color: transparent;
+}
+
+/* Daftar favorit */
+.yt-fav-list-wrap{ margin-top: 1.6rem; text-align:left; }
+.yt-fav-label{
+  font-family: var(--font-heading);
+  font-weight:700;
+  color: var(--pink-deep);
+  font-size:0.85rem;
+  margin-bottom: 0.7rem;
+}
+.yt-fav-list{
+  display:flex;
+  flex-direction:column;
+  gap: 0.6rem;
+  max-height: 220px;
+  overflow-y:auto;
+}
+.yt-fav-empty{
+  text-align:center;
+  color: var(--text-soft);
+  font-size:0.82rem;
+  font-style:italic;
+}
+.yt-fav-item{
+  display:flex;
+  align-items:center;
+  gap: 0.7rem;
+  background: var(--pink-light);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.7rem;
+}
+.yt-fav-item img{
+  width: 56px;
+  height: 42px;
+  object-fit:cover;
+  border-radius: 8px;
+  flex-shrink:0;
+}
+.yt-fav-item .yt-fav-title{
+  flex:1;
+  font-size: 0.82rem;
+  font-weight:600;
+  color: var(--text-dark);
+  cursor:pointer;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.yt-fav-item .yt-fav-title:hover{ color: var(--pink-deep); }
+.yt-fav-item .yt-fav-delete{
+  background:none;
+  border:none;
+  color: var(--text-soft);
+  cursor:pointer;
+  font-size:0.85rem;
+  flex-shrink:0;
+}
+.yt-fav-item .yt-fav-delete:hover{ color:#e0577a; }
+
+
 /* =====================================================================
    SECTION 8 — REASONS WHY I LOVE YOU (flip cards)
    ===================================================================== */
@@ -1212,8 +1296,7 @@ footer i{ color: var(--pink-deep); }
       <div class="timeline-item reveal">
         <span class="timeline-dot" aria-hidden="true"></span>
         <div class="timeline-card">
-          <div class="timeline-photo"><img src="https://raw.githubusercontent.com/meelomil/kado-ulang-tahun-caca/main/assets/cacakenangan%20%282%29.jpg
-" alt="Placeholder kenangan 5"></div>
+          <div class="timeline-photo"><img src="https://raw.githubusercontent.com/meelomil/kado-ulang-tahun-caca/main/assets/cacakenangan%20%282%29.jpg" alt="Placeholder kenangan 5"></div>
           <h3>Judul Kenangan 5</h3>
           <p>Tulis cerita singkat tentang momen ini di sini...</p>
         </div>
@@ -1407,6 +1490,19 @@ footer i{ color: var(--pink-deep); }
         </div>
         <div class="yt-embed-wrap" id="yt-embed-wrap">
           <span>Video akan tampil di sini setelah link dimuat 🎵</span>
+        </div>
+
+        <!-- Tombol simpan link yang sedang dimuat ke daftar favorit (tersimpan online via Firebase) -->
+        <button type="button" class="yt-fav-btn" id="btn-save-favorite">
+          <i class="fa-regular fa-star"></i> Simpan ke Favorit
+        </button>
+
+        <!-- Daftar favorit, dirender otomatis oleh JavaScript dari Firebase -->
+        <div class="yt-fav-list-wrap">
+          <p class="yt-fav-label"><i class="fa-solid fa-list"></i>&nbsp; Daftar Favorit</p>
+          <div class="yt-fav-list" id="yt-fav-list">
+            <p class="yt-fav-empty">Belum ada favorit. Load video lalu klik "Simpan ke Favorit".</p>
+          </div>
         </div>
       </div>
     </div>
@@ -1936,6 +2032,9 @@ function extractYouTubeID(url){
   return null;
 }
 
+// Menyimpan video YouTube yang sedang dimuat, supaya tombol "Simpan ke Favorit" tahu video mana yang dimaksud
+let currentYtVideoId = null;
+
 btnLoadYT.addEventListener('click', () => {
   const url = ytUrlInput.value.trim();
 
@@ -1948,8 +2047,11 @@ btnLoadYT.addEventListener('click', () => {
 
   if (!videoId){
     ytEmbedWrap.innerHTML = '<span>Link YouTube tidak terbaca. Pastikan format link lengkap, contoh: https://www.youtube.com/watch?v=xxxxxxxxxxx 🌼</span>';
+    currentYtVideoId = null;
     return;
   }
+
+  currentYtVideoId = videoId;
 
   // Pakai youtube-nocookie.com: domain alternatif YouTube untuk embed,
   // sering lebih jarang kena blokir tracker/privacy extension dibanding youtube.com biasa
@@ -1966,6 +2068,134 @@ btnLoadYT.addEventListener('click', () => {
 ytUrlInput.addEventListener('keypress', (e) => {
   if (e.key === 'Enter') btnLoadYT.click();
 });
+
+// Helper untuk memuat video dari videoId langsung (dipakai saat klik item favorit)
+function loadYouTubeVideo(videoId){
+  currentYtVideoId = videoId;
+  ytUrlInput.value = `https://youtu.be/${videoId}`;
+  ytEmbedWrap.innerHTML = `<iframe
+      src="https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1"
+      title="YouTube video player"
+      frameborder="0"
+      referrerpolicy="strict-origin-when-cross-origin"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+      allowfullscreen></iframe>`;
+}
+
+
+/* ===================================================================
+   7b) FAVORIT YOUTUBE — simpan & tampilkan daftar lagu favorit via Firebase
+        Disimpan di node terpisah (/yt_favorites) dari Dinding Pesan,
+        memakai pola yang sama supaya tersinkron dari device manapun.
+   =================================================================== */
+const FAVORITES_ENDPOINT = `${FIREBASE_DB_URL}/yt_favorites.json`;
+
+const btnSaveFavorite = document.getElementById('btn-save-favorite');
+const ytFavListEl = document.getElementById('yt-fav-list');
+
+// --- Ambil semua favorit dari Firebase dan render sebagai daftar ---
+async function loadFavorites(){
+  try {
+    const res = await fetch(FAVORITES_ENDPOINT);
+    if (!res.ok) throw new Error('Gagal mengambil favorit');
+    const data = await res.json();
+    renderFavorites(data);
+  } catch (err) {
+    ytFavListEl.innerHTML = '<p class="yt-fav-empty">Gagal memuat daftar favorit.</p>';
+    console.error('Load favorites error:', err);
+  }
+}
+
+function renderFavorites(data){
+  ytFavListEl.innerHTML = '';
+
+  if (!data){
+    ytFavListEl.innerHTML = '<p class="yt-fav-empty">Belum ada favorit. Load video lalu klik "Simpan ke Favorit".</p>';
+    return;
+  }
+
+  const favorites = Object.entries(data).map(([firebaseKey, fav]) => ({ firebaseKey, ...fav }));
+  favorites.sort((a, b) => b.id - a.id); // terbaru di atas
+
+  favorites.forEach((fav) => {
+    const item = document.createElement('div');
+    item.className = 'yt-fav-item';
+    item.innerHTML = `
+      <img src="https://img.youtube.com/vi/${fav.videoId}/mqdefault.jpg" alt="Thumbnail" loading="lazy">
+      <span class="yt-fav-title" data-video-id="${fav.videoId}" title="Klik untuk memutar">${escapeHTML(fav.title || fav.videoId)}</span>
+      <button class="yt-fav-delete" data-key="${fav.firebaseKey}" title="Hapus dari favorit"><i class="fa-solid fa-trash"></i></button>
+    `;
+    ytFavListEl.appendChild(item);
+  });
+}
+
+// --- Simpan video yang sedang dimuat ke daftar favorit ---
+btnSaveFavorite.addEventListener('click', async () => {
+  if (!currentYtVideoId){
+    alert('Load video YouTube dulu sebelum disimpan ke favorit ya.');
+    return;
+  }
+
+  btnSaveFavorite.disabled = true;
+  const originalLabel = btnSaveFavorite.innerHTML;
+  btnSaveFavorite.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Menyimpan...';
+
+  try {
+    const res = await fetch(FAVORITES_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: Date.now(),
+        videoId: currentYtVideoId,
+        title: ytUrlInput.value.trim()
+      })
+    });
+    if (!res.ok) throw new Error('Gagal menyimpan favorit');
+
+    btnSaveFavorite.classList.add('is-saved');
+    btnSaveFavorite.innerHTML = '<i class="fa-solid fa-star"></i> Tersimpan!';
+    await loadFavorites();
+
+    setTimeout(() => {
+      btnSaveFavorite.classList.remove('is-saved');
+      btnSaveFavorite.innerHTML = originalLabel;
+      btnSaveFavorite.disabled = false;
+    }, 1500);
+  } catch (err) {
+    alert('Gagal menyimpan favorit. Cek koneksi internet kamu.');
+    console.error('Save favorite error:', err);
+    btnSaveFavorite.innerHTML = originalLabel;
+    btnSaveFavorite.disabled = false;
+  }
+});
+
+// --- Klik judul favorit untuk langsung memutar ulang videonya ---
+ytFavListEl.addEventListener('click', (e) => {
+  const titleEl = e.target.closest('.yt-fav-title');
+  if (titleEl){
+    loadYouTubeVideo(titleEl.dataset.videoId);
+    return;
+  }
+
+  // --- Hapus item favorit ---
+  const deleteBtn = e.target.closest('.yt-fav-delete');
+  if (deleteBtn){
+    deleteFavorite(deleteBtn.dataset.key);
+  }
+});
+
+async function deleteFavorite(firebaseKey){
+  try {
+    const res = await fetch(`${FIREBASE_DB_URL}/yt_favorites/${firebaseKey}.json`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Gagal menghapus favorit');
+    await loadFavorites();
+  } catch (err) {
+    alert('Gagal menghapus favorit. Coba lagi.');
+    console.error('Delete favorite error:', err);
+  }
+}
+
+loadFavorites(); // muat daftar favorit pertama kali saat halaman dibuka
 
 
 /* ===================================================================
