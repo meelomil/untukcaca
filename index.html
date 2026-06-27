@@ -71,13 +71,14 @@
 [hidden]{ display:none !important; }
 
 
-html{ scroll-behavior:smooth; }
+html{ scroll-behavior:smooth; overflow-x: hidden; max-width: 100%; }
 
 body{
   font-family: var(--font-body);
   background: linear-gradient(180deg, var(--cream) 0%, var(--pink-light) 100%);
   color: var(--text-dark);
   overflow-x: hidden;
+  max-width: 100%;
   line-height: 1.6;
 }
 
@@ -2923,6 +2924,12 @@ document.addEventListener('click', (e) => {
     options.style.top = top + 'px';
   }
 });
+
+// Popup pilihan reaksi pakai position:fixed (menempel ke layar), sementara tombol
+// pemicunya ikut bergerak saat halaman discroll (karena itu bagian dari konten biasa).
+// Tanpa ini, popup akan terlihat "lepas" dari tombolnya saat user scroll.
+// { passive: true } dipakai supaya listener ini tidak memperlambat performa scroll.
+window.addEventListener('scroll', closeOpenReactionOptions, { passive: true });
 
 // --- Klik tombol reaksi: kirim/update angka ke Firebase ---
 // Event delegation di document, karena reaction-bar tersebar di banyak section berbeda
