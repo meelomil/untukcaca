@@ -802,24 +802,31 @@ section{
 .msg-photo-preview-wrap{
   position:relative;
   width: 120px;
-  margin: 0 auto 0.9rem;
+  margin: 0 auto 1.2rem; /* margin atas ditambah supaya tombol X yang nongol ke atas tidak kepotong/sulit ditekan */
 }
 .msg-photo-preview-wrap img{
   width:100%;
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-soft);
+  display:block;
 }
 .msg-photo-preview-wrap button{
   position:absolute;
-  top:-8px; right:-8px;
-  width: 26px; height:26px;
+  top:-10px; right:-10px;
+  width: 32px; height:32px; /* diperbesar dari 26px agar lebih mudah ditekan, terutama di touchscreen */
   border-radius:50%;
   background: var(--pink-deep);
   color:#fff;
-  border:none;
+  border: 2px solid #fff; /* border putih membantu tombol tetap terlihat jelas di atas foto apa pun */
   cursor:pointer;
-  font-size: 0.75rem;
+  font-size: 0.85rem;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  z-index: 2; /* pastikan tombol selalu di atas foto, tidak tertutup elemen lain */
 }
+.msg-photo-preview-wrap button:hover{ background: var(--orange-deep); }
 
 /* Foto yang dilampirkan pada bubble pesan yang sudah terkirim */
 .message-bubble .msg-photo{
@@ -1405,19 +1412,19 @@ footer i{ color: var(--pink-deep); }
       <path d="M50 10 C70 10 85 35 85 55 C85 80 65 90 50 90 C35 90 15 80 15 55 C15 35 30 10 50 10Z" fill="#9bc99b"/>
       <path d="M50 15 L50 85" stroke="#7aab7a" stroke-width="2"/>
     </svg>
-    <!-- Bunga matahari: kelopak runcing kuning mengelilingi pusat coklat tua -->
+    <!-- Bunga matahari: kelopak oval kuning mengelilingi pusat coklat tua -->
     <svg class="deco deco-flower" style="top:14%; right:8%;" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
       <g fill="#ffd23f">
-        <path d="M50 50 L50 8 L58 38 Z"/>
-        <path d="M50 50 L82 18 L62 42 Z"/>
-        <path d="M50 50 L92 50 L62 58 Z"/>
-        <path d="M50 50 L82 82 L58 62 Z"/>
-        <path d="M50 50 L50 92 L42 62 Z"/>
-        <path d="M50 50 L18 82 L38 58 Z"/>
-        <path d="M50 50 L8 50 L38 42 Z"/>
-        <path d="M50 50 L18 18 L42 38 Z"/>
+        <ellipse cx="50" cy="22" rx="10" ry="18"/>
+        <ellipse cx="78" cy="50" rx="18" ry="10"/>
+        <ellipse cx="50" cy="78" rx="10" ry="18"/>
+        <ellipse cx="22" cy="50" rx="18" ry="10"/>
+        <ellipse cx="69" cy="31" rx="10" ry="17" transform="rotate(45 69 31)"/>
+        <ellipse cx="69" cy="69" rx="10" ry="17" transform="rotate(135 69 69)"/>
+        <ellipse cx="31" cy="69" rx="10" ry="17" transform="rotate(45 31 69)"/>
+        <ellipse cx="31" cy="31" rx="10" ry="17" transform="rotate(135 31 31)"/>
       </g>
-      <circle cx="50" cy="50" r="16" fill="#8a5a2c"/>
+      <circle cx="50" cy="50" r="17" fill="#8a5a2c"/>
     </svg>
     <svg class="deco deco-leaf-2" style="bottom:10%; left:10%;" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
       <path d="M50 10 C70 10 85 35 85 55 C85 80 65 90 50 90 C35 90 15 80 15 55 C15 35 30 10 50 10Z" fill="#ffc89e"/>
