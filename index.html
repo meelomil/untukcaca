@@ -2882,12 +2882,44 @@ function renderAllReactionBars(allData){
 // --- Klik ringkasan reaksi: buka/tutup panel 5 pilihan lengkap ---
 // Menutup panel pilihan reaksi yang sedang terbuka, dan mengembalikannya
 // ke posisi asal di DOM (penting karena saat terbuka elemen ini dipindah ke <body>)
+let reactionPositionLoopId = null; // ID requestAnimationFrame yang sedang berjalan, untuk dihentikan saat popup ditutup
+
 function closeOpenReactionOptions(){
   const openOptions = document.querySelector('.reaction-options.is-open');
   if (!openOptions) return;
   openOptions.hidden = true;
   openOptions.classList.remove('is-open');
   if (openOptions._homeBar) openOptions._homeBar.appendChild(openOptions); // _homeBar: referensi elemen .reaction-bar asalnya
+
+  if (reactionPositionLoopId){
+    cancelAnimationFrame(reactionPositionLoopId);
+    reactionPositionLoopId = null;
+  }
+}
+
+// Menghitung & menerapkan posisi popup tepat di atas/bawah tombol pemicunya.
+// Dipanggil berulang lewat requestAnimationFrame selama popup terbuka, supaya posisi
+// selalu ikut bergerak bersama tombolnya saat halaman discroll — bukan cuma sekali dihitung
+// di awal. Pendekatan ini jauh lebih solid daripada menutup popup saat event scroll terdeteksi,
+// karena event scroll di beberapa browser mobile bisa terlambat/di-throttle sehingga popup
+// sempat terlihat "lepas" sesaat sebelum tertutup.
+function positionReactionOptions(options, summaryBtn){
+  const rect = summaryBtn.getBoundingClientRect();
+  const optionsWidth = options.offsetWidth;
+  const optionsHeight = options.offsetHeight;
+
+  let left = rect.right - optionsWidth;
+  left = Math.max(8, Math.min(left, window.innerWidth - optionsWidth - 8));
+  let top = rect.top - optionsHeight - 8;
+  if (top < 8){
+    top = rect.bottom + 8;
+  }
+  options.style.left = left + 'px';
+  options.style.top = top + 'px';
+
+  // Kalau tombol pemicunya sudah scroll keluar layar sepenuhnya, ikut sembunyikan popup-nya juga
+  const isButtonVisible = rect.bottom > 0 && rect.top < window.innerHeight;
+  options.style.visibility = isButtonVisible ? 'visible' : 'hidden';
 }
 
 document.addEventListener('click', (e) => {
@@ -2914,45 +2946,46 @@ document.addEventListener('click', (e) => {
 
     options.hidden = false;
     options.classList.add('is-open');
+    options.style.visibility = 'visible';
 
-    // Sekarang getBoundingClientRect() dan position:fixed dihitung benar-benar relatif viewport
-    const rect = summaryBtn.getBoundingClientRect();
-    options.style.left = '0px';
-    options.style.top = '0px';
-    const optionsWidth = options.offsetWidth;
-    const optionsHeight = options.offsetHeight;
-    let left = rect.right - optionsWidth; // rata kanan terhadap tombol ringkasan
-    left = Math.max(8, Math.min(left, window.innerWidth - optionsWidth - 8)); // jaga agar tidak keluar layar
-    let top = rect.top - optionsHeight - 8; // coba di atas tombol ringkasan dulu
-    if (top < 8){
-      top = rect.bottom + 8; // kalau ruang di atas tidak cukup (mis. dekat ujung atas layar), tampilkan di bawah saja
+    positionReactionOptions(options, summaryBtn); // hitung posisi awal
+
+    // Mulai loop yang terus memperbarui posisi popup setiap frame, mengikuti tombolnya
+    function loop(){
+      if (options.hidden) return; // popup sudah ditutup (mis. lewat tombol lain), hentikan loop
+      positionReactionOptions(options, summaryBtn);
+      reactionPositionLoopId = requestAnimationFrame(loop);
     }
-    options.style.left = left + 'px';
-    options.style.top = top + 'px';
+    reactionPositionLoopId = requestAnimationFrame(loop);
   }
 });
 
-// Popup pilihan reaksi pakai position:fixed (menempel ke layar), sementara tombol
-// pemicunya ikut bergerak saat halaman discroll (karena itu bagian dari konten biasa).
-// Tanpa ini, popup akan terlihat "lepas" dari tombolnya saat user scroll.
-// { passive: true } dipakai supaya listener ini tidak memperlambat performa scroll.
-window.addEventListener('scroll', closeOpenReactionOptions, { passive: true });
-
 // --- Klik tombol reaksi: kirim/update angka ke Firebase ---
 // Event delegation di document, karena reaction-bar tersebar di banyak section berbeda
+// Mencegah race condition: kalau koneksi lambat (umum di HP), user bisa sempat klik 2x sebelum
+// request pertama selesai. Tanpa pengaman ini, klik kedua akan mengambil data Firebase yang BELUM
+// memuat hasil dari klik pertama, sehingga hitungannya bertambah dobel padahal user cuma klik sekali.
+const reactionLocks = new Set(); // menyimpan itemId yang sedang diproses, sebagai penanda "sedang sibuk"
+
 document.addEventListener('click', async (e) => {
   const btn = e.target.closest('.reaction-btn');
   if (!btn) return;
 
   const itemId = btn.dataset.itemId;
   const emoji = btn.dataset.emoji;
-  const myReactions = getMyReactions();
-  const previousPick = myReactions[itemId];
 
-  // Kalau user klik emoji yang sama yang sudah dia pilih sebelumnya, anggap itu "batal reaksi"
-  const isUnselecting = previousPick === emoji;
+  if (reactionLocks.has(itemId)){
+    return; // masih ada request sebelumnya untuk item ini yang belum selesai, abaikan klik ini
+  }
+  reactionLocks.add(itemId);
 
   try {
+    const myReactions = getMyReactions();
+    const previousPick = myReactions[itemId];
+
+    // Kalau user klik emoji yang sama yang sudah dia pilih sebelumnya, anggap itu "batal reaksi"
+    const isUnselecting = previousPick === emoji;
+
     // Ambil data reaksi item ini saja dari Firebase (paling baru), supaya tidak menimpa reaksi orang lain
     const res = await fetch(`${FIREBASE_DB_URL}/reactions/${itemId}.json`);
     const currentCounts = (await res.json()) || {};
@@ -2981,6 +3014,8 @@ document.addEventListener('click', async (e) => {
     await loadReactions(); // refresh tampilan semua reaction-bar dengan data terbaru
   } catch (err) {
     console.error('Reaction error:', err);
+  } finally {
+    reactionLocks.delete(itemId); // selesai, buka kembali kunci supaya klik berikutnya bisa diproses
   }
 });
 
